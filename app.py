@@ -3,91 +3,86 @@ import pandas as pd
 import os
 from PIL import Image
 
-# 设置网页配置
-st.set_page_config(page_title="我的商品展示工具", layout="wide")
+# 1. 网页基础设置
+st.set_page_config(page_title="我的选品库", layout="wide")
+st.title("🛍️ 选品展示系统")
 
-st.title("🛒 商品展示系统 (自动修复版)")
-
-# 1. 读取数据
+# 2. 读取数据函数
 @st.cache_data
 def load_data():
     if not os.path.exists('product_database_master.csv'):
         return None
-    # 读取 CSV，所有列名转为小写以避免大小写不一致的问题
     df = pd.read_csv('product_database_master.csv')
     return df
 
 df = load_data()
 
 if df is None:
-    st.error("❌ 错误：找不到 product_database_master.csv 文件。")
+    st.error("找不到数据文件，请检查 product_database_master.csv 是否上传。")
 else:
-    # --- 🔍 自动侦测列名 ---
-    # 打印出当前的列名，方便调试
-    st.info(f"📊 表格中的列名检测结果: {df.columns.tolist()}")
+    # --- 核心配置 (根据你的截图填写的) ---
+    img_col = '图片路径'  # 你的图片列名
+    name_col = '商品'     # 你的商品名列名
+    price_col = '真实售价' # 你的价格列名
     
-    # 尝试寻找包含 'image', 'path', 'img', 'pic' 字眼的列
-    image_col = None
-    possible_names = ['image_path', 'image', 'path', 'img_path', 'pic', '图片', '照片']
+    # 搜索框
+    search_term = st.text_input("🔍 搜索商品...", "")
     
-    # 1. 先精确匹配
-    for name in possible_names:
-        if name in df.columns:
-            image_col = name
-            break
+    # 过滤数据
+    if search_term:
+        filtered_df = df[df[name_col].astype(str).str.contains(search_term, case=False, na=False)]
+    else:
+        filtered_df = df
+
+    # --- 展示画廊 ---
+    st.write(f"共找到 {len(filtered_df)} 款商品")
+    
+    # 设置每行显示 3 列
+    cols = st.columns(3)
+    
+    for index, row in filtered_df.iterrows():
+        col = cols[index % 3] # 循环放入 3 列中
+        
+        with col:
+            # --- 🛠️ 路径超级修复大法 ---
+            raw_path = str(row[img_col])
             
-    # 2. 如果没找到，找包含关键字的
-    if image_col is None:
-        for col in df.columns:
-            if 'image' in col.lower() or 'path' in col.lower():
-                image_col = col
-                break
-    
-    # --- 🛠️ 核心逻辑 ---
-    if image_col:
-        st.success(f"✅ 成功匹配到图片列：'{image_col}'")
-        
-        # 搜索框
-        search_term = st.text_input("🔍 搜索商品名称...", "")
-        
-        # 确保 name 列存在，如果不存在就用第一列代替
-        name_col = 'name' if 'name' in df.columns else df.columns[0]
-        
-        if search_term:
-            filtered_df = df[df[name_col].astype(str).str.contains(search_term, case=False, na=False)]
-        else:
-            filtered_df = df
-
-        # 展示网格
-        cols = st.columns(3)
-        for index, row in filtered_df.iterrows():
-            col = cols[index % 3]
-            with col:
-                # 获取路径
-                raw_path = str(row[image_col])
-                # 修复路径格式 (把 Windows 的 \ 换成 /)
-                img_path = raw_path.replace("\\", "/")
+            # 1. 把反斜杠 \ 变成正斜杠 /
+            clean_path = raw_path.replace("\\", "/")
+            
+            # 2. 如果路径里包含 'db_images'，只保留 'db_images' 后面的部分
+            # 这样可以去掉 'E:/.../...' 这种本地绝对路径
+            if "db_images" in clean_path:
+                parts = clean_path.split("db_images")
+                # 重新组合，确保是 db_images/xxx.png
+                final_path = "db_images" + parts[-1]
+            else:
+                final_path = clean_path
                 
-                # 为了调试，如果图片显示不出来，可以把 img_path 打印出来看看
-                # st.caption(img_path) 
-                
-                if os.path.exists(img_path):
-                    try:
-                        image = Image.open(img_path)
-                        st.image(image, use_container_width=True)
-                    except:
-                        st.error("图片损坏")
-                else:
-                    st.warning(f"⚠️ 找不到图")
-                
-                st.subheader(str(row[name_col]))
-                
-                # 尝试显示价格
-                if 'price' in df.columns:
-                    st.write(f"💰 ¥{row['price']}")
-                
-                st.markdown("---")
-                
-
+            # --- 显示图片 ---
+            if os.path.exists(final_path):
+                try:
+                    image = Image.open(final_path)
+                    st.image(image, use_container_width=True)
+                except:
+                    st.caption("🖼️ 图片无法打开")
+            else:
+                # 如果找不到，显示一个灰色的框和路径名字，方便排查
+                st.warning("⚠️ 路径不对")
+                st.caption(f"系统在找: {final_path}")
+            
+            # --- 显示文字信息 ---
+            st.subheader(str(row[name_col]))
+            
+            # 显示价格和利润
+            if price_col in row:
+                st.info(f"💰 售价: {row[price_col]}")
+            
+            # 显示其他信息 (如果有)
+            if '文案' in row and pd.notna(row['文案']):
+                with st.expander("查看文案"):
+                    st.write(row['文案'])
+                    
+            st.markdown("---")
 
 
