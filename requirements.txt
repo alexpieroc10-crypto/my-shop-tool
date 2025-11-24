@@ -1,0 +1,6 @@
+streamlit
+pandas
+rembg[cli]
+pillow
+requests
+google-generativeai
